@@ -1,10 +1,9 @@
-// app/payment-success/page.tsx
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { Suspense, useEffect, useMemo, useState } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 
-export default function PaymentSuccessPage() {
+function PaymentSuccessInner() {
   const sp = useSearchParams();
   const router = useRouter();
 
@@ -19,62 +18,43 @@ export default function PaymentSuccessPage() {
   useEffect(() => {
     let cancelled = false;
 
-    async function verifyOnce(ref: string) {
-      const backend = (process.env.NEXT_PUBLIC_BACKEND_BASE_URL || "").replace(/\/$/, "");
-      if (!backend) throw new Error("NEXT_PUBLIC_BACKEND_BASE_URL not set");
-
-      const r = await fetch(`${backend}/paystack/verify`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ reference: ref }),
-        cache: "no-store",
-      });
-
-      const data = await r.json().catch(() => ({}));
-      return { ok: r.ok && data?.ok, data };
-    }
-
     async function run() {
       if (!reference) {
-        setStatus("failed");
-        setMessage("Missing payment reference.");
+        if (!cancelled) {
+          setStatus("failed");
+          setMessage("Missing payment reference.");
+        }
         return;
       }
 
-      setStatus("checking");
-      setMessage("Verifying payment...");
+      try {
+        const backend = (process.env.NEXT_PUBLIC_BACKEND_BASE_URL || "").replace(/\/$/, "");
+        if (!backend) throw new Error("NEXT_PUBLIC_BACKEND_BASE_URL not set");
 
-      const MAX_TRIES = 10;
-      const WAIT_MS = 2500;
+        const r = await fetch(`${backend}/paystack/verify`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ reference }),
+          cache: "no-store",
+        });
 
-      for (let i = 1; i <= MAX_TRIES; i++) {
-        if (cancelled) return;
+        const data = await r.json().catch(() => ({}));
 
-        try {
-          const { ok, data } = await verifyOnce(reference);
-
-          if (ok) {
+        if (!cancelled) {
+          if (r.ok && data?.ok) {
             setStatus("ok");
             setMessage("Payment verified. Subscription activated.");
-            return;
+          } else {
+            setStatus("failed");
+            setMessage(data?.error || "Verification failed. If you paid, please contact support.");
           }
-
-          // Not ok yet — keep retrying
-          setMessage(
-            data?.error
-              ? `Waiting for confirmation (${i}/${MAX_TRIES}): ${data.error}`
-              : `Waiting for confirmation (${i}/${MAX_TRIES})...`
-          );
-        } catch (e: any) {
-          setMessage(`Verification error (${i}/${MAX_TRIES}): ${e?.message || "error"}`);
         }
-
-        // wait then try again
-        await new Promise((res) => setTimeout(res, WAIT_MS));
+      } catch (e: any) {
+        if (!cancelled) {
+          setStatus("failed");
+          setMessage(e?.message || "Error verifying payment.");
+        }
       }
-
-      setStatus("failed");
-      setMessage("We could not confirm payment yet. If you paid, please contact support with your reference.");
     }
 
     run();
@@ -95,5 +75,13 @@ export default function PaymentSuccessPage() {
         <button onClick={() => router.push("/pricing")}>Back to Pricing</button>
       </div>
     </div>
+  );
+}
+
+export default function PaymentSuccessPage() {
+  return (
+    <Suspense fallback={<div style={{ maxWidth: 720, margin: "40px auto", padding: 20 }}>Loading...</div>}>
+      <PaymentSuccessInner />
+    </Suspense>
   );
 }

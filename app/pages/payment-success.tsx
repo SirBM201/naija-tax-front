@@ -13,7 +13,7 @@ function PaymentSuccessInner() {
   );
 
   const [status, setStatus] = useState<"checking" | "ok" | "failed">("checking");
-  const [message, setMessage] = useState<string>("Verifying payment...");
+  const [message, setMessage] = useState("Verifying payment...");
 
   useEffect(() => {
     let cancelled = false;
